@@ -33,7 +33,7 @@
     "api",
     "client"
   ],
-  "author": "https://github.com/owldesign",
+  "author": "Vadim Goncharov (https://github.com/owldesign)",
   "license": "MIT",
   "engines": {
     "node": ">=18"
