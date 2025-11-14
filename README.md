@@ -39,6 +39,30 @@ if (response.data) {
 }
 ```
 
+## Token helper
+
+Tokens issued by `https://auth.alvys.com/oauth/token` expire after 60 minutes. The SDK now ships a helper that caches and refreshes them automatically while keeping the `.env` fallback for manually generated tokens.
+
+```ts
+import { createAlvysAccessTokenProvider, createAlvysClient } from 'alvys-sdk';
+
+const getAccessToken = createAlvysAccessTokenProvider({
+  clientId: process.env.ALVYS_CLIENT_ID!,
+  clientSecret: process.env.ALVYS_CLIENT_SECRET!,
+  // Optional: scope, custom audience, or fetch implementation
+});
+
+const alvys = createAlvysClient({
+  accessToken: getAccessToken,
+});
+```
+
+`createAlvysAccessTokenProvider()`
+- Caches the last token and refreshes it one minute before expiration.
+- Uses the official audience `https://api.alvys.com/public/` by default.
+- Falls back to `process.env.ALVYS_TOKEN` when no client credentials are available.
+- Accepts async `clientId`/`clientSecret`/`fallbackToken` factories plus a custom `fetch` implementation if needed.
+
 ### Endpoint examples (Drivers, Loads, Trucks, Trailers)
 Each helper returns the typed response from the OpenAPI spec. Path params (such as `{version}`) are passed via `params.path`, while filters go in `params.query`, and search payloads are fully typed via the exported `components` schema map.
 

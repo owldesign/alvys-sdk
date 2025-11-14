@@ -5,6 +5,10 @@ import createClient, {
 import type { paths } from './types/alvys';
 
 const DEFAULT_BASE_URL = 'https://integrations.alvys.com';
+const AUTH_TOKEN_URL = 'https://auth.alvys.com/oauth/token';
+const PUBLIC_API_AUDIENCE = 'https://api.alvys.com/public/';
+const TOKEN_DEFAULT_EXPIRES_IN_SECONDS = 60 * 60; // 60 minutes per docs
+const TOKEN_EXPIRATION_BUFFER_MS = 60_000; // refresh 1 minute early
 
 type MaybePromise<T> = T | Promise<T>;
 type ValueOrFactory<T> = T | (() => MaybePromise<T>);
@@ -56,6 +60,140 @@ const resolveValue = async <T>(value?: ValueOrFactory<T>): Promise<T | undefined
     return await (value as () => MaybePromise<T>)();
   }
   return value;
+};
+
+const getEnv = (key: string): string | undefined => {
+  if (typeof process === 'undefined' || !process?.env) {
+    return undefined;
+  }
+  return process.env[key];
+};
+
+interface TokenCacheEntry {
+  token: string;
+  expiresAt: number;
+}
+
+interface TokenEndpointResponse {
+  access_token?: string;
+  expires_in?: number;
+  token_type?: string;
+  scope?: string;
+}
+
+export interface CreateAlvysAccessTokenProviderOptions {
+  clientId?: ValueOrFactory<string | undefined>;
+  clientSecret?: ValueOrFactory<string | undefined>;
+  audience?: string;
+  scope?: string | string[];
+  fetch?: typeof fetch;
+  fallbackToken?: ValueOrFactory<string | undefined>;
+  /** Override how early to refresh before the remote expiration. */
+  expirationBufferMs?: number;
+}
+
+export const createAlvysAccessTokenProvider = (
+  options: CreateAlvysAccessTokenProviderOptions = {}
+) => {
+  let cache: TokenCacheEntry | undefined;
+  let inFlight: Promise<string> | undefined;
+
+  const fetchImpl = options.fetch ?? globalThis.fetch;
+  const audience = options.audience ?? PUBLIC_API_AUDIENCE;
+  const scope = Array.isArray(options.scope) ? options.scope.join(' ') : options.scope;
+  const expirationBufferMs = options.expirationBufferMs ?? TOKEN_EXPIRATION_BUFFER_MS;
+
+  const resolveFallbackToken = async () =>
+    (await resolveValue(options.fallbackToken)) ?? getEnv('ALVYS_TOKEN');
+  const resolveClientId = async () =>
+    (await resolveValue(options.clientId)) ?? getEnv('ALVYS_CLIENT_ID');
+  const resolveClientSecret = async () =>
+    (await resolveValue(options.clientSecret)) ?? getEnv('ALVYS_CLIENT_SECRET');
+
+  const requestToken = async (): Promise<string> => {
+    if (typeof fetchImpl !== 'function') {
+      throw new Error(
+        'A fetch implementation is required to retrieve Alvys access tokens. Provide options.fetch or set a global fetch.'
+      );
+    }
+
+    const [clientId, clientSecret] = await Promise.all([resolveClientId(), resolveClientSecret()]);
+    if (!clientId || !clientSecret) {
+      throw new Error(
+        'Missing Alvys client credentials. Set ALVYS_CLIENT_ID/ALVYS_CLIENT_SECRET or pass clientId/clientSecret to createAlvysAccessTokenProvider().'
+      );
+    }
+
+    const payload: Record<string, string> = {
+      client_id: clientId,
+      client_secret: clientSecret,
+      audience,
+      grant_type: 'client_credentials',
+    };
+
+    if (scope) {
+      payload.scope = scope;
+    }
+
+    const response = await fetchImpl(AUTH_TOKEN_URL, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => '<no body>');
+      throw new Error(
+        `Failed to retrieve Alvys access token (${response.status} ${response.statusText || ''}): ${errorText}`.trim()
+      );
+    }
+
+    const data = (await response.json()) as TokenEndpointResponse;
+    if (!data.access_token) {
+      throw new Error('The Alvys token endpoint did not return an access_token.');
+    }
+
+    const expiresInSeconds =
+      typeof data.expires_in === 'number' && data.expires_in > 0
+        ? data.expires_in
+        : TOKEN_DEFAULT_EXPIRES_IN_SECONDS;
+    const ttlMs = Math.max(5_000, expiresInSeconds * 1000 - expirationBufferMs);
+    cache = {
+      token: data.access_token,
+      expiresAt: Date.now() + ttlMs,
+    };
+
+    return data.access_token;
+  };
+
+  const getCachedToken = () => {
+    if (cache && cache.expiresAt > Date.now()) {
+      return cache.token;
+    }
+    return undefined;
+  };
+
+  return async (): Promise<string> => {
+    const fallback = await resolveFallbackToken();
+    if (fallback) {
+      return fallback;
+    }
+
+    const cached = getCachedToken();
+    if (cached) {
+      return cached;
+    }
+
+    if (!inFlight) {
+      inFlight = requestToken().finally(() => {
+        inFlight = undefined;
+      });
+    }
+
+    return await inFlight;
+  };
 };
 
 export interface AlvysClientOptions {
@@ -150,3 +288,5 @@ export const createAlvysClient = (options: AlvysClientOptions = {}) => {
 
 export type AlvysClient = ReturnType<typeof createAlvysClient>;
 export const ALVYS_DEFAULT_BASE_URL = DEFAULT_BASE_URL;
+export const ALVYS_AUTH_TOKEN_URL = AUTH_TOKEN_URL;
+export const ALVYS_PUBLIC_API_AUDIENCE = PUBLIC_API_AUDIENCE;
