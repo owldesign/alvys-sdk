@@ -1,4 +1,4 @@
-# alvys-sdk
+# Alvys REST API
 
 Typed, ESM-first JavaScript/TypeScript client for the [Alvys REST API](https://docs.alvys.com/reference), generated directly from the public OpenAPI specification.
 
