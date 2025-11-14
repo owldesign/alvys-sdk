@@ -1,6 +1,6 @@
 {
   "name": "alvys-sdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Typed JavaScript/TypeScript client for the Alvys REST API.",
   "type": "module",
   "sideEffects": false,
