@@ -1,0 +1,50 @@
+{
+  "name": "alvys-sdk",
+  "version": "0.1.0",
+  "description": "Typed JavaScript/TypeScript client for the Alvys REST API.",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src/types",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "clean": "rm -rf dist",
+    "dev": "tsup --watch",
+    "generate": "openapi-typescript https://api.alvys.com/swagger/public/swagger.json --output src/types/alvys.ts"
+  },
+  "keywords": [
+    "alvys",
+    "sdk",
+    "api",
+    "client"
+  ],
+  "author": "https://github.com/owldesign",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "openapi-fetch": "^0.8.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "openapi-typescript": "^7.4.2",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3"
+  }
+}
